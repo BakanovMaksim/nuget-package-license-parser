@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30104.148
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NuGetPackageLicenseParser.BL", "NuGetPackageLicenseParser.BL\NuGetPackageLicenseParser.BL.csproj", "{9CAE2811-2AF7-42FD-AD7E-1933D8403B27}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NuGetPackageLicenseParser.UI", "NuGetPackageLicenseParser.UI\NuGetPackageLicenseParser.UI.csproj", "{51BB1989-7DA4-418C-B4C3-F0BE26ADAAD0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9CAE2811-2AF7-42FD-AD7E-1933D8403B27}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9CAE2811-2AF7-42FD-AD7E-1933D8403B27}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9CAE2811-2AF7-42FD-AD7E-1933D8403B27}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9CAE2811-2AF7-42FD-AD7E-1933D8403B27}.Release|Any CPU.Build.0 = Release|Any CPU
+		{51BB1989-7DA4-418C-B4C3-F0BE26ADAAD0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{51BB1989-7DA4-418C-B4C3-F0BE26ADAAD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{51BB1989-7DA4-418C-B4C3-F0BE26ADAAD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{51BB1989-7DA4-418C-B4C3-F0BE26ADAAD0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {17781ABE-E774-43A8-A869-A3CA29E079ED}
+	EndGlobalSection
+EndGlobal
