@@ -1,4 +1,5 @@
-﻿using NuGetPackageLicenseParser.BL;
+﻿using Microsoft.Extensions.Logging;
+using NuGetPackageLicenseParser.BL;
 
 namespace NuGetPackageLicenseParser.UI
 {
@@ -6,7 +7,11 @@ namespace NuGetPackageLicenseParser.UI
     {
         static void Main(string[] args)
         {
-            Parser.ParsingLicense();
+            using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+            ILogger logger = loggerFactory.CreateLogger<ParserController>();
+
+            ParserController parseController = new ParserController(logger);
+            parseController.ParsingLicense();
         }
     }
 }
