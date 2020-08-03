@@ -7,10 +7,10 @@ namespace NuGetPackageLicenseParser.BL.Model
     {
         public IEnumerable<FileInfo> ProjectsFilesNugetCashe { get; set; }
 
-        public List<string> LinksNuGet { get; set; }
+        public List<string> LinksNuGet { get; } = new List<string>();
 
-        public List<string> LinksLicense { get; set; }
+        public List<string> LinksLicense { get; } = new List<string>();
 
-        public List<string> FileName { get; set; }
+        public List<string> FileName { get; } = new List<string>();
     }
 }

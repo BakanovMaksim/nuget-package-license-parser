@@ -5,9 +5,9 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
-using System.Net;
-using System.Text;
+using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace NuGetPackageLicenseParser.BL
 {
@@ -35,86 +35,84 @@ namespace NuGetPackageLicenseParser.BL
         {
             _logger.LogInformation("Подготовка к выкачиванию лицензий.");
 
-            DirectoryElements.DirectoryCurrentProject = new DirectoryInfo(Path.GetFullPath(Environment.CurrentDirectory + "\\..\\..\\..\\..\\..\\"));
+            var task = Task.Factory.StartNew(GetProjectsFilesNugetCashe);
 
-            FileElements.ProjectsFilesNugetCashe = DirectoryElements.DirectoryCurrentProject.GetFiles("project.nuget.cache", SearchOption.AllDirectories)
-                .Where(p => !p.DirectoryName.Contains("NuGetPackageLicenseParser"));
+            task.Wait();
 
-            FileElements.LinksNuGet = new List<string>();
-            FileElements.LinksLicense = new List<string>();
-            FileElements.FileName = new List<string>();
-
-            foreach (var item in FileElements.ProjectsFilesNugetCashe)
-            {
-                FileElements.LinksNuGet.AddRange(ParseToFiles(item, ".nuget"));
-            }
+            var forEachFiles = Parallel.ForEach(FileElements.ProjectsFilesNugetCashe, item =>
+           {
+               FileElements.LinksNuGet.AddRange(ParseToFiles(item, ".nuget"));
+           });
 
             _logger.LogInformation("Начинается выкачивание лицензий.");
 
-            foreach (var item in FileElements.LinksNuGet.Distinct())
+            if (forEachFiles.IsCompleted)
             {
-                var text = item.Remove(item.Length - 2).Remove(0, 5);
-                var directoryfdh = new DirectoryInfo(Path.GetFullPath(text));
-                var filefdh = new FileInfo(directoryfdh.FullName);
+                Parallel.ForEach(FileElements.LinksNuGet.Distinct(), item =>
+                {
+                    DirectoryElements.DirectoryPackages = GetDirectoryPackages(item);
 
-                DirectoryElements.DirectoryPackages = new DirectoryInfo(filefdh.DirectoryName);
-
-                GetLicenses();
+                    GetLicenses();
+                });
             }
 
-            for (int k = 0; k < FileElements.LinksLicense.Count; k++)
-            {
-                _logger.LogInformation($"{FileElements.FileName[k].Replace("<id>", "").Replace("</id>", "")}\n");
-
-                File.WriteAllText($"{_pathSaveLicense}{FileElements.FileName[k].Replace("<id>", "").Replace("</id>", "")}.LICENSE",
-                    LoadPage($"{FileElements.LinksLicense[k].Replace("<licenseUrl>", "").Replace("</licenseUrl>", "")}"));
-            }
+            Parallel.For(0, FileElements.LinksLicense.Count - 1, WriteLicensesSiteAsync);
 
             _logger.LogInformation("Выкачивание лицензий выполнено.");
         }
 
+        private void GetProjectsFilesNugetCashe()
+        {
+            DirectoryElements.DirectoryCurrentProject = new DirectoryInfo(Path.GetFullPath(Environment.CurrentDirectory + "\\..\\..\\..\\..\\..\\"));
+
+            FileElements.ProjectsFilesNugetCashe = DirectoryElements.DirectoryCurrentProject.GetFiles("project.nuget.cache", SearchOption.AllDirectories)
+                .Where(p => !p.DirectoryName.Contains("NuGetPackageLicenseParser"));
+        }
+
         private IEnumerable<string> ParseToFiles(FileInfo item, string text) => File.ReadAllLines(item.FullName).Where(p => p.Contains(text));
+
+        private DirectoryInfo GetDirectoryPackages(string item)
+        {
+            var text = item.Remove(item.Length - 2).Remove(0, 5);
+
+            return new DirectoryInfo(Directory.GetParent(text).FullName);
+        }
 
         private void GetLicenses()
         {
-            foreach (var itemFile in DirectoryElements.DirectoryPackages.GetFiles())
+            foreach (var item in DirectoryElements.DirectoryPackages.GetFiles())
             {
-                if (itemFile.Name.Contains("LICENSE"))
+                if (item.Name.Contains("LICENSE"))
                 {
-                    _logger.LogInformation($"{Directory.GetParent(itemFile.DirectoryName).Name}\n");
+                    _logger.LogInformation($"{Directory.GetParent(item.DirectoryName).Name}\n");
 
-                    File.Copy(itemFile.FullName, Path.GetFullPath($"{_pathSaveLicense}" + Directory.GetParent(itemFile.DirectoryName).Name) + ".LICENSE", true);
+                    File.Copy(item.FullName, Path.GetFullPath($"{_pathSaveLicense}" + Directory.GetParent(item.DirectoryName).Name) + ".LICENSE", true);
                 }
-                else if (itemFile.Name.Contains(".nuspec"))
+                else if (item.Name.Contains(".nuspec"))
                 {
-                    FileElements.LinksLicense.AddRange(ParseToFiles(itemFile, "licenseUrl"));
-                    FileElements.FileName.AddRange(ParseToFiles(itemFile, "<id>"));
+                    FileElements.LinksLicense.AddRange(ParseToFiles(item, "licenseUrl"));
+                    FileElements.FileName.AddRange(ParseToFiles(item, "<id>"));
                 }
             }
         }
 
-        private string LoadPage(string url)
+        private async void WriteLicensesSiteAsync(int count)
         {
-            var result = string.Empty;
-            var request = (HttpWebRequest)WebRequest.Create(url);
-            var response = (HttpWebResponse)request.GetResponse();
+            _logger.LogInformation($"{FileElements.FileName[count].Replace("<id>", "").Replace("</id>", "")}\n");
 
-            if (response.StatusCode == HttpStatusCode.OK)
-            {
-                var receiveStream = response.GetResponseStream();
-                if (receiveStream != null)
-                {
-                    StreamReader readStream;
-                    if (response.CharacterSet == null)
-                        readStream = new StreamReader(receiveStream);
-                    else
-                        readStream = new StreamReader(receiveStream, Encoding.GetEncoding(response.CharacterSet));
-                    result = readStream.ReadToEnd();
-                    readStream.Close();
-                }
-                response.Close();
-            }
+            var qwe = $"{_pathSaveLicense}{FileElements.FileName[count].Replace("<id>", "").Replace("</id>", "")}.LICENSE";
+            var asd = await LoadPageAsync($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", "").Replace("</licenseUrl>", "")}");
+            await File.WriteAllTextAsync(qwe, asd);
+        }
+
+        private async Task<string> LoadPageAsync(string url)
+        {
+            var client = new HttpClient();
+            var response = await client.GetAsync(url);
+            var result = await response.Content.ReadAsStringAsync();
+
             return Regex.Replace(result, "<[^>]+>|&quot;", string.Empty);
         }
     }
 }
+
