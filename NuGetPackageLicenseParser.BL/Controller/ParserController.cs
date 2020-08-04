@@ -6,9 +6,9 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
+using System.Net;
+using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace NuGetPackageLicenseParser.BL
@@ -37,36 +37,26 @@ namespace NuGetPackageLicenseParser.BL
         {
             _logger.LogInformation("Подготовка к выкачиванию лицензий.");
 
-            var taskOne = new Task(GetProjectsFilesNugetCashe);
+            GetProjectsFilesNugetCashe();
 
-            var taskTwo = taskOne.ContinueWith(task =>
-              {
-                  Parallel.ForEach(FileElements.ProjectsFilesNugetCashe, item =>
-                  {
-                      FileElements.LinksNuGet.AddRange(ParseToFiles(item, ".nuget"));
-                  });
-              });
+            var forEachFiles = Parallel.ForEach(FileElements.ProjectsFilesNugetCashe, item =>
+            {
+                FileElements.LinksNuGet.AddRange(ParseToFiles(item, ".nuget"));
+            });
 
-            var taskThree = taskTwo.ContinueWith(task =>
-              {
-                  _logger.LogInformation("Начинается выкачивание лицензий.");
+            _logger.LogInformation("Начинается выкачивание лицензий.");
 
-                  Parallel.ForEach(FileElements.LinksNuGet.Distinct(), item =>
-                  {
-                      DirectoryElements.DirectoryPackages = GetDirectoryPackages(item);
+            if (forEachFiles.IsCompleted)
+            {
+                Parallel.ForEach(FileElements.LinksNuGet.Distinct(), item =>
+                {
+                    DirectoryElements.DirectoryPackages = GetDirectoryPackages(item);
 
-                      GetLicenses();
-                  });
-              });
+                    GetLicenses();
+                });
+            }
 
-
-            var taskFour = taskThree.ContinueWith(task =>
-              {
-                  Parallel.For(0, FileElements.LinksLicense.Count - 1, WriteLicensesSiteAsync);
-              });
-
-            taskOne.Start();
-            taskFour.Wait();
+            Parallel.For(0, FileElements.LinksLicense.Count - 1, WriteLicensesSite);
 
             _logger.LogInformation("Выкачивание лицензий выполнено.");
         }
@@ -96,7 +86,7 @@ namespace NuGetPackageLicenseParser.BL
                 {
                     _logger.LogInformation($"{Directory.GetParent(item.DirectoryName).Name}\n");
 
-                    File.Copy(item.FullName, Path.GetFullPath($"{_pathSaveLicense}" + Directory.GetParent(item.DirectoryName).Name) + ".license", true);
+                    File.Copy(item.FullName, Path.GetFullPath($"{_pathSaveLicense}" + Directory.GetParent(item.DirectoryName).Name) + ".LICENSE.LICENSE", true);
                 }
                 else if (item.Name.Contains(".nuspec"))
                 {
@@ -106,29 +96,58 @@ namespace NuGetPackageLicenseParser.BL
             }
         }
 
-        private async void WriteLicensesSiteAsync(int count)
+        private void WriteLicensesSite(int count)
         {
             _logger.LogInformation($"{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}\n");
 
-            var fileName = $"{_pathSaveLicense}{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}.license";
-            var fileContent = await LoadPageAsync($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", string.Empty).Replace("</licenseUrl>", string.Empty)}");
-            await File.WriteAllTextAsync(fileName, fileContent);
+            var fileName = $"{_pathSaveLicense}{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}.LICENSE.LICENSE";
+            var fileContent = LoadPage($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", string.Empty).Replace("</licenseUrl>", string.Empty)}");
+
+            if(fileContent != null) 
+                File.WriteAllText(fileName, fileContent);
         }
 
-        private async Task<string> LoadPageAsync(string url)
+        private string LoadPage(string url)
         {
-            using (var client = new HttpClient())
-            using (var response = await client.GetAsync(url))
-            using (var content = response.Content)
+            var data = string.Empty;
+            
+            try
             {
-                var data = await content.ReadAsStringAsync();
-
-                var document = new HtmlDocument();
-                document.LoadHtml(data);
-                var result = document.DocumentNode.InnerText;
-
-                return Regex.Replace(result, "|&quot;|&nbsp;", string.Empty);
+                var request = (HttpWebRequest)WebRequest.Create(url);
+                var response = (HttpWebResponse)request.GetResponse();
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    var receiveStream = response.GetResponseStream();
+                    if (receiveStream != null)
+                    {
+                        StreamReader readStream;
+                        if (response.CharacterSet == null)
+                            readStream = new StreamReader(receiveStream);
+                        else
+                            readStream = new StreamReader(receiveStream, Encoding.GetEncoding(response.CharacterSet));
+                        data = readStream.ReadToEnd();
+                        readStream.Close();
+                    }
+                    response.Close();
+                }
             }
+            catch(WebException)
+            {
+                return null;
+            }
+
+            var result = ParseContentPage(data);
+
+            return result;
+        }
+
+        private string ParseContentPage(string data)
+        {
+            var document = new HtmlDocument();
+            document.LoadHtml(data);
+            var result = document.DocumentNode.InnerText;
+
+            return Regex.Replace(result, "&quot;|&nbsp;|&#39;", string.Empty);
         }
     }
 }
