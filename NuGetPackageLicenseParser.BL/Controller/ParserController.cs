@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using HtmlAgilityPack;
+using Microsoft.Extensions.Logging;
 using NuGetPackageLicenseParser.BL.Model;
 using System;
 using System.Collections.Generic;
@@ -7,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace NuGetPackageLicenseParser.BL
@@ -35,28 +37,36 @@ namespace NuGetPackageLicenseParser.BL
         {
             _logger.LogInformation("Подготовка к выкачиванию лицензий.");
 
-            var task = Task.Factory.StartNew(GetProjectsFilesNugetCashe);
+            var taskOne = new Task(GetProjectsFilesNugetCashe);
 
-            task.Wait();
+            var taskTwo = taskOne.ContinueWith(task =>
+              {
+                  Parallel.ForEach(FileElements.ProjectsFilesNugetCashe, item =>
+                  {
+                      FileElements.LinksNuGet.AddRange(ParseToFiles(item, ".nuget"));
+                  });
+              });
 
-            var forEachFiles = Parallel.ForEach(FileElements.ProjectsFilesNugetCashe, item =>
-           {
-               FileElements.LinksNuGet.AddRange(ParseToFiles(item, ".nuget"));
-           });
+            var taskThree = taskTwo.ContinueWith(task =>
+              {
+                  _logger.LogInformation("Начинается выкачивание лицензий.");
 
-            _logger.LogInformation("Начинается выкачивание лицензий.");
+                  Parallel.ForEach(FileElements.LinksNuGet.Distinct(), item =>
+                  {
+                      DirectoryElements.DirectoryPackages = GetDirectoryPackages(item);
 
-            if (forEachFiles.IsCompleted)
-            {
-                Parallel.ForEach(FileElements.LinksNuGet.Distinct(), item =>
-                {
-                    DirectoryElements.DirectoryPackages = GetDirectoryPackages(item);
+                      GetLicenses();
+                  });
+              });
 
-                    GetLicenses();
-                });
-            }
 
-            Parallel.For(0, FileElements.LinksLicense.Count - 1, WriteLicensesSiteAsync);
+            var taskFour = taskThree.ContinueWith(task =>
+              {
+                  Parallel.For(0, FileElements.LinksLicense.Count - 1, WriteLicensesSiteAsync);
+              });
+
+            taskOne.Start();
+            taskFour.Wait();
 
             _logger.LogInformation("Выкачивание лицензий выполнено.");
         }
@@ -86,7 +96,7 @@ namespace NuGetPackageLicenseParser.BL
                 {
                     _logger.LogInformation($"{Directory.GetParent(item.DirectoryName).Name}\n");
 
-                    File.Copy(item.FullName, Path.GetFullPath($"{_pathSaveLicense}" + Directory.GetParent(item.DirectoryName).Name) + ".LICENSE", true);
+                    File.Copy(item.FullName, Path.GetFullPath($"{_pathSaveLicense}" + Directory.GetParent(item.DirectoryName).Name) + ".license", true);
                 }
                 else if (item.Name.Contains(".nuspec"))
                 {
@@ -98,20 +108,27 @@ namespace NuGetPackageLicenseParser.BL
 
         private async void WriteLicensesSiteAsync(int count)
         {
-            _logger.LogInformation($"{FileElements.FileName[count].Replace("<id>", "").Replace("</id>", "")}\n");
+            _logger.LogInformation($"{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}\n");
 
-            var qwe = $"{_pathSaveLicense}{FileElements.FileName[count].Replace("<id>", "").Replace("</id>", "")}.LICENSE";
-            var asd = await LoadPageAsync($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", "").Replace("</licenseUrl>", "")}");
-            await File.WriteAllTextAsync(qwe, asd);
+            var fileName = $"{_pathSaveLicense}{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}.license";
+            var fileContent = await LoadPageAsync($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", string.Empty).Replace("</licenseUrl>", string.Empty)}");
+            await File.WriteAllTextAsync(fileName, fileContent);
         }
 
         private async Task<string> LoadPageAsync(string url)
         {
-            var client = new HttpClient();
-            var response = await client.GetAsync(url);
-            var result = await response.Content.ReadAsStringAsync();
+            using (var client = new HttpClient())
+            using (var response = await client.GetAsync(url))
+            using (var content = response.Content)
+            {
+                var data = await content.ReadAsStringAsync();
 
-            return Regex.Replace(result, "<[^>]+>|&quot;", string.Empty);
+                var document = new HtmlDocument();
+                document.LoadHtml(data);
+                var result = document.DocumentNode.InnerText;
+
+                return Regex.Replace(result, "|&quot;|&nbsp;", string.Empty);
+            }
         }
     }
 }
