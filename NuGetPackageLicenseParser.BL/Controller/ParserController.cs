@@ -17,6 +17,8 @@ namespace NuGetPackageLicenseParser.BL
     {
         private readonly ILogger _logger;
 
+        private readonly string _pathCurrentDirectory;
+
         private readonly string _pathSaveLicense;
 
         public FileElements FileElements { get; }
@@ -26,7 +28,8 @@ namespace NuGetPackageLicenseParser.BL
         public ParserController(ILogger logger)
         {
             _logger = logger;
-            _pathSaveLicense = ConfigurationManager.AppSettings["path"];
+            _pathCurrentDirectory = ConfigurationManager.AppSettings["pathCurrentDirectory"];
+            _pathSaveLicense = ConfigurationManager.AppSettings["pathSaveLicense"];
             FileElements = new FileElements();
             DirectoryElements = new DirectoryElements();
 
@@ -63,7 +66,7 @@ namespace NuGetPackageLicenseParser.BL
 
         private void GetProjectsFilesNugetCashe()
         {
-            DirectoryElements.DirectoryCurrentProject = new DirectoryInfo(Path.GetFullPath(Environment.CurrentDirectory + "\\..\\..\\..\\..\\..\\"));
+            DirectoryElements.DirectoryCurrentProject = new DirectoryInfo(Path.GetFullPath(_pathCurrentDirectory));
 
             FileElements.ProjectsFilesNugetCashe = DirectoryElements.DirectoryCurrentProject.GetFiles("project.nuget.cache", SearchOption.AllDirectories)
                 .Where(p => !p.DirectoryName.Contains("NuGetPackageLicenseParser"));
