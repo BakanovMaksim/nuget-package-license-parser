@@ -1,17 +1,18 @@
 ﻿using Microsoft.Extensions.Logging;
 using NuGetPackageLicenseParser.BL;
+using System.Threading.Tasks;
 
 namespace NuGetPackageLicenseParser.UI
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
             ILogger logger = loggerFactory.CreateLogger<ParserController>();
 
             ParserController parseController = new ParserController(logger);
-            parseController.ParsingLicense();
+            await parseController.ParsingLicenseAsync();
         }
     }
 }

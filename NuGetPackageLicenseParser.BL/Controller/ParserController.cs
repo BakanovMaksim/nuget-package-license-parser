@@ -1,13 +1,11 @@
 ﻿using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using NuGetPackageLicenseParser.BL.Model;
-using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
-using System.Net;
-using System.Text;
+using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -36,30 +34,41 @@ namespace NuGetPackageLicenseParser.BL
             _logger.LogInformation("Приложение запущено.");
         }
 
-        public void ParsingLicense()
+        public async Task ParsingLicenseAsync()
         {
             _logger.LogInformation("Подготовка к выкачиванию лицензий.");
 
             GetProjectsFilesNugetCashe();
 
-            var forEachFiles = Parallel.ForEach(FileElements.ProjectsFilesNugetCashe, item =>
-            {
-                FileElements.LinksNuGet.AddRange(ParseToFiles(item, ".nuget"));
-            });
+            var forEachFiles = Parallel.ForEach(
+                source: FileElements.ProjectsFilesNugetCashe,
+                localInit: () => new List<string> { },
+                body: (item, state, localvalue) =>
+                {
+                    localvalue.AddRange(ParseToFiles(item, ".nuget"));
+                    return localvalue;
+                },
+                localFinally: localValue =>
+                {
+                    FileElements.LinksNuGet.AddRange(localValue);
+                });
 
             _logger.LogInformation("Начинается выкачивание лицензий.");
 
             if (forEachFiles.IsCompleted)
             {
-                Parallel.ForEach(FileElements.LinksNuGet.Distinct(), item =>
+                foreach (var item in FileElements.LinksNuGet)
                 {
                     DirectoryElements.DirectoryPackages = GetDirectoryPackages(item);
 
                     GetLicenses();
-                });
+                }
             }
 
-            Parallel.For(0, FileElements.LinksLicense.Count - 1, WriteLicensesSite);
+            for (int k = 0; k < FileElements.LinksLicense.Count; k++)
+            {
+                await WriteLicensesSiteAsync(k);
+            }
 
             _logger.LogInformation("Выкачивание лицензий выполнено.");
         }
@@ -99,49 +108,35 @@ namespace NuGetPackageLicenseParser.BL
             }
         }
 
-        private void WriteLicensesSite(int count)
+        private async Task WriteLicensesSiteAsync(int count)
         {
             _logger.LogInformation($"{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}\n");
 
             var fileName = $"{_pathSaveLicense}{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}.LICENSE.LICENSE";
-            var fileContent = LoadPage($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", string.Empty).Replace("</licenseUrl>", string.Empty)}");
+            var fileContent = await LoadPageAsync($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", string.Empty).Replace("</licenseUrl>", string.Empty)}");
 
-            if(fileContent != null) 
-                File.WriteAllText(fileName, fileContent);
+            if (fileContent != null)
+                await File.WriteAllTextAsync(fileName, fileContent);
         }
 
-        private string LoadPage(string url)
+        private async Task<string> LoadPageAsync(string url)
         {
-            var data = string.Empty;
-            
             try
             {
-                var request = (HttpWebRequest)WebRequest.Create(url);
-                var response = (HttpWebResponse)request.GetResponse();
-                if (response.StatusCode == HttpStatusCode.OK)
+                using (var client = new HttpClient())
+                using (var response = await client.GetAsync(url))
+                using (var content = response.Content)
                 {
-                    var receiveStream = response.GetResponseStream();
-                    if (receiveStream != null)
-                    {
-                        StreamReader readStream;
-                        if (response.CharacterSet == null)
-                            readStream = new StreamReader(receiveStream);
-                        else
-                            readStream = new StreamReader(receiveStream, Encoding.GetEncoding(response.CharacterSet));
-                        data = readStream.ReadToEnd();
-                        readStream.Close();
-                    }
-                    response.Close();
+                    var data = await content.ReadAsStringAsync();
+                    var result = ParseContentPage(data);
+
+                    return result;
                 }
             }
-            catch(WebException)
+            catch (HttpRequestException)
             {
                 return null;
             }
-
-            var result = ParseContentPage(data);
-
-            return result;
         }
 
         private string ParseContentPage(string data)
