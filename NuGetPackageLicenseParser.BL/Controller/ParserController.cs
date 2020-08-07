@@ -1,6 +1,7 @@
 ﻿using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using NuGetPackageLicenseParser.BL.Model;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
@@ -23,8 +24,14 @@ namespace NuGetPackageLicenseParser.BL
 
         public DirectoryElements DirectoryElements { get; }
 
-        public ParserController(ILogger logger)
+        public ParserController(ILogger logger,IReadOnlyList<string> arguments)
         {
+            if(arguments.Count > 0)
+            {
+                _pathCurrentDirectory = arguments[0];
+                _pathSaveLicense = arguments[1];
+            }
+
             _logger = logger;
             _pathCurrentDirectory = ConfigurationManager.AppSettings["pathCurrentDirectory"];
             _pathSaveLicense = ConfigurationManager.AppSettings["pathSaveLicense"];
