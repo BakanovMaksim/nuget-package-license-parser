@@ -1,8 +1,4 @@
-﻿using HtmlAgilityPack;
-using Microsoft.Extensions.Logging;
-using NuGetPackageLicenseParser.BL.Model;
-using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
@@ -10,117 +6,157 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
+using HtmlAgilityPack;
+
+using Microsoft.Extensions.Logging;
+
+using NuGetPackageLicenseParser.BL.Model;
+
 namespace NuGetPackageLicenseParser.BL
 {
     public class ParserController
     {
-        private readonly ILogger _logger;
+        private readonly ILogger logger;
 
-        private readonly string _pathCurrentDirectory;
+        private readonly string pathCurrentDirectory;
 
-        private readonly string _pathSaveLicense;
+        private readonly string pathSaveLicense;
 
         public FileElements FileElements { get; }
 
         public DirectoryElements DirectoryElements { get; }
 
-        public ParserController(ILogger logger,IReadOnlyList<string> arguments)
+        public ParserController(ILogger logger, IReadOnlyList<string> arguments)
         {
-            if(arguments.Count > 0)
+            if (arguments.Count > 0)
             {
-                _pathCurrentDirectory = arguments[0];
-                _pathSaveLicense = arguments[1];
+                pathCurrentDirectory = arguments[0];
+                pathSaveLicense = arguments[1];
             }
 
-            _logger = logger;
-            _pathCurrentDirectory = ConfigurationManager.AppSettings["pathCurrentDirectory"];
-            _pathSaveLicense = ConfigurationManager.AppSettings["pathSaveLicense"];
+            this.logger = logger;
+            pathCurrentDirectory = ConfigurationManager.AppSettings["pathCurrentDirectory"];
+            pathSaveLicense = ConfigurationManager.AppSettings["pathSaveLicense"];
             FileElements = new FileElements();
             DirectoryElements = new DirectoryElements();
 
-            _logger.LogInformation("Приложение запущено.");
+            this.logger.LogInformation("Приложение запущено.");
         }
 
-        public async Task ParsingLicenseAsync()
+        public void ParsingLicenseAsync()
         {
-            _logger.LogInformation("Подготовка к выкачиванию лицензий.");
+            logger.LogInformation("Подготовка к выкачиванию лицензий.");
 
             GetProjectsFilesNugetCashe();
 
-            var forEachFiles = Parallel.ForEach(
-                source: FileElements.ProjectsFilesNugetCashe,
-                localInit: () => new List<string> { },
-                body: (item, state, localvalue) =>
-                {
-                    localvalue.AddRange(ParseToFiles(item, ".nuget"));
-                    return localvalue;
-                },
-                localFinally: localValue =>
-                {
-                    FileElements.LinksNuGet.AddRange(localValue);
-                });
+            ParseFiles();
 
-            _logger.LogInformation("Начинается выкачивание лицензий.");
+            logger.LogInformation("Начинается выкачивание лицензий.");
 
-            if (forEachFiles.IsCompleted)
-            {
-                foreach (var item in FileElements.LinksNuGet)
-                {
-                    DirectoryElements.DirectoryPackages = GetDirectoryPackages(item);
+            GetLicenses();
 
-                    GetLicenses();
-                }
-            }
+            logger.LogInformation("Начинается сохранение лицензий.");
 
-            for (int k = 0; k < FileElements.LinksLicense.Count; k++)
-            {
-                await WriteLicensesSiteAsync(k);
-            }
+            WriteLicensesSite();
 
-            _logger.LogInformation("Выкачивание лицензий выполнено.");
+            logger.LogInformation("Выкачивание лицензий выполнено.");
         }
 
         private void GetProjectsFilesNugetCashe()
         {
-            DirectoryElements.DirectoryCurrentProject = new DirectoryInfo(Path.GetFullPath(_pathCurrentDirectory));
+            var directoryCurrentProject = new DirectoryInfo(Path.GetFullPath(pathCurrentDirectory));
 
-            FileElements.ProjectsFilesNugetCashe = DirectoryElements.DirectoryCurrentProject.GetFiles("project.nuget.cache", SearchOption.AllDirectories)
+            FileElements.ProjectsFilesNugetCashe = directoryCurrentProject.GetFiles("project.nuget.cache", SearchOption.AllDirectories)
                 .Where(p => !p.DirectoryName.Contains("NuGetPackageLicenseParser"));
         }
 
-        private IEnumerable<string> ParseToFiles(FileInfo item, string text) => File.ReadAllLines(item.FullName).Where(p => p.Contains(text));
-
-        private DirectoryInfo GetDirectoryPackages(string item)
+        private void ParseFiles()
         {
-            var text = item.Remove(item.Length - 2).Remove(0, 5);
+            var tasks = new List<Task<IEnumerable<string>>>(FileElements.ProjectsFilesNugetCashe.Count());
+            foreach (var item in FileElements.ProjectsFilesNugetCashe)
+            {
+                tasks.Add(ParseToFiles(item, ".nuget"));
+            }
 
-            return new DirectoryInfo(Directory.GetParent(text).FullName);
+            Task.WaitAll(tasks.ToArray());
+
+            foreach (var t in tasks)
+            {
+                FileElements.LinksNuGet.AddRange(t.GetAwaiter().GetResult());
+            }
+
+            FileElements.LinksNuGet = FileElements.LinksNuGet.Distinct().ToList();
         }
 
         private void GetLicenses()
         {
-            foreach (var item in DirectoryElements.DirectoryPackages.GetFiles())
+            var tasks = new List<Task>();
+
+            foreach (var item in FileElements.LinksNuGet.Where(r => r != null))
+            {
+                tasks.Add(GetLicensesAsync(item));
+            }
+
+            Task.WaitAll(tasks.ToArray());
+
+            FileElements.LinksLicense = FileElements.LinksLicense.Distinct().ToList();
+            FileElements.FileName = FileElements.FileName.Distinct().ToList();
+        }
+
+        private async Task<IEnumerable<string>> ParseToFiles(FileInfo item, string text) =>
+            (await File.ReadAllLinesAsync(item.FullName))
+            .Where(p => p.Contains(text))
+            .Select(r => r.Trim());
+
+        private DirectoryInfo GetDirectoryPackages(string item)
+        {
+            var text = item.TrimEnd(',').Trim('"');
+
+            return new DirectoryInfo(Directory.GetParent(text).FullName);
+        }
+
+        private async Task GetLicensesAsync(string itemPath)
+        {
+            var directoryPackages = GetDirectoryPackages(itemPath);
+
+            foreach (var item in directoryPackages.GetFiles())
             {
                 if (item.Name.Contains("LICENSE"))
                 {
-                    _logger.LogInformation($"{Directory.GetParent(item.DirectoryName).Name}\n");
+                    logger.LogInformation($"{Directory.GetParent(item.DirectoryName).Name}\n");
 
-                    File.Copy(item.FullName, Path.GetFullPath($"{_pathSaveLicense}" + Directory.GetParent(item.DirectoryName).Name) + ".LICENSE.LICENSE", true);
+                    File.Copy(item.FullName, Path.GetFullPath($"{pathSaveLicense}" + Directory.GetParent(item.DirectoryName).Name) + ".LICENSE.LICENSE", true);
                 }
                 else if (item.Name.Contains(".nuspec"))
                 {
-                    FileElements.LinksLicense.AddRange(ParseToFiles(item, "licenseUrl"));
-                    FileElements.FileName.AddRange(ParseToFiles(item, "<id>"));
+                    FileElements.LinksLicense.AddRange(await ParseToFiles(item, "licenseUrl"));
+                    FileElements.FileName.AddRange(await ParseToFiles(item, "<id>"));
                 }
             }
         }
 
+        private void WriteLicensesSite()
+        {
+            var tasks = new List<Task>();
+
+            for (var k = 0; k < FileElements.LinksLicense.Count; k++)
+            {
+                tasks.Add(WriteLicensesSiteAsync(k));
+            }
+
+            Task.WaitAll(tasks.ToArray());
+        }
+
         private async Task WriteLicensesSiteAsync(int count)
         {
-            _logger.LogInformation($"{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}\n");
+            if (FileElements.FileName[count] == null) return;
+            if (FileElements.LinksLicense[count] == null) return;
 
-            var fileName = $"{_pathSaveLicense}{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty)}.LICENSE.LICENSE";
+            var file = $"{FileElements.FileName[count].Replace("<id>", string.Empty).Replace("</id>", string.Empty).Trim()}";
+            var fileName = $"{pathSaveLicense}{file}.LICENSE";
             var fileContent = await LoadPageAsync($"{FileElements.LinksLicense[count].Replace("<licenseUrl>", string.Empty).Replace("</licenseUrl>", string.Empty)}");
+
+            logger.LogInformation($"{file}\n");
 
             if (fileContent != null)
                 await File.WriteAllTextAsync(fileName, fileContent);
@@ -130,15 +166,13 @@ namespace NuGetPackageLicenseParser.BL
         {
             try
             {
-                using (var client = new HttpClient())
-                using (var response = await client.GetAsync(url))
-                using (var content = response.Content)
-                {
-                    var data = await content.ReadAsStringAsync();
-                    var result = ParseContentPage(data);
+                using var client = new HttpClient();
+                using var response = await client.GetAsync(url);
+                using var content = response.Content;
+                var data = await content.ReadAsStringAsync();
+                var result = ParseContentPage(data);
 
-                    return result;
-                }
+                return result;
             }
             catch (HttpRequestException)
             {

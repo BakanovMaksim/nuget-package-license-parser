@@ -7,13 +7,13 @@ namespace NuGetPackageLicenseParser.UI
 {
     class Program
     {
-        static async Task Main(string[] args)
+        static void Main(string[] args)
         {
             using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
             ILogger logger = loggerFactory.CreateLogger<ParserController>();
 
             ParserController parseController = new ParserController(logger, args);
-            await parseController.ParsingLicenseAsync();
+            parseController.ParsingLicenseAsync();
         }
     }
 }
