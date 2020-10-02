@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
+
 using NuGetPackageLicenseParser.BL;
-using System;
-using System.Threading.Tasks;
 
 namespace NuGetPackageLicenseParser.UI
 {

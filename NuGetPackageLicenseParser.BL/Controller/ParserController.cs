@@ -1,16 +1,16 @@
-﻿using System.Collections.Generic;
+﻿using HtmlAgilityPack;
+
+using Microsoft.Extensions.Logging;
+
+using NuGetPackageLicenseParser.BL.Model;
+
+using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-
-using HtmlAgilityPack;
-
-using Microsoft.Extensions.Logging;
-
-using NuGetPackageLicenseParser.BL.Model;
 
 namespace NuGetPackageLicenseParser.BL
 {
@@ -40,26 +40,26 @@ namespace NuGetPackageLicenseParser.BL
             FileElements = new FileElements();
             DirectoryElements = new DirectoryElements();
 
-            this.logger.LogInformation("Приложение запущено.");
+            this.logger.LogInformation("The app is running.");
         }
 
         public void ParsingLicenseAsync()
         {
-            logger.LogInformation("Подготовка к выкачиванию лицензий.");
+            logger.LogInformation("Preparing to download licenses.");
 
             GetProjectsFilesNugetCashe();
 
             ParseFiles();
 
-            logger.LogInformation("Начинается выкачивание лицензий.");
+            logger.LogInformation("License siphoning begins.");
 
             GetLicenses();
 
-            logger.LogInformation("Начинается сохранение лицензий.");
+            logger.LogInformation("License saving starts.");
 
             WriteLicensesSite();
 
-            logger.LogInformation("Выкачивание лицензий выполнено.");
+            logger.LogInformation("License extraction completed.");
         }
 
         private void GetProjectsFilesNugetCashe()
